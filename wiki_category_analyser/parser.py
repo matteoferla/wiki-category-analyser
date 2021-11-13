@@ -209,4 +209,4 @@ class WikicatParser:
 
     def to_dataframe(self):
         import pandas as pd
-        pd.DataFrame(self.data)
+        return pd.DataFrame.from_dict(self.data, orient='index')
