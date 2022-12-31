@@ -5,6 +5,7 @@ import pageviewapi
 import requests, re, csv
 import datetime as dt
 from typing import *
+import mwxml, bz2
 
 class WikicatParser:
     """
@@ -141,6 +142,24 @@ class WikicatParser:
         member_info = r['query']['categorymembers']
         self._add_datum(member_info, cat)
         return member_info
+
+    def get_pages_from_dump(self, dump_path: str='enwiki-latest-pages-articles.xml.bz2'):
+        """
+        https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2
+        """
+        dump = mwxml.Dump.from_file(bz2.open(dump_path,
+                                             mode='rt', encoding='utf-8')
+                                   )
+        assert self.wanted_templates, 'Template needs to be specified.'
+        wanted = [w.lower() for w in self.wanted_templates]
+        for page in dump:
+            revision = next(page)
+            if revision.text is None:
+                continue
+            lower_text = revision.text.lower()
+            if not any([want in lower_text for want in wanted]):
+                continue
+            self._add_datum([{'title': page.title}], 'dump')
 
     def get_pages_recursively(self, cat=None):
         if cat is None:
