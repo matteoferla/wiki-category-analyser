@@ -1,3 +1,5 @@
+import warnings
+
 import wikitextparser as wtp
 import pageviewapi
 import requests, re, csv
@@ -7,15 +9,18 @@ from typing import *
 class WikicatParser:
     """
     Gets all the pages recursively within a category and parser the content (via a suplied function) and gets pageviews.
-    >>>pages = WikicatParser(cat_name, custom_page_parser=my_function, extra_fields=[], forbidden_categories_keywords=[...]).get_pages_recursively()
-    >>>print(pages.data)
-    >>>pandas.DataFrame.from_records(list(pages.data.values()))
-    custom_page_parser is for content mining. a function that given wiki text returns a dictionary of whatever it mined.
-    Any extra fields need to be be added to extra_fields or to_csv will fail.
 
-    .get_pages_recursively gets everything downwards. Do note that .forbidden_categories_keywords may need to be set.
+    .. code-block:: python
+        pages = WikicatParser(cat_name, custom_page_parser=my_function, extra_fields=[], forbidden_categories_keywords=[...]).get_pages_recursively()
+        print(pages.data)
+        pandas.DataFrame.from_records(list(pages.data.values()))
+
+    ``custom_page_parser`` is for content mining. a function that given wiki text returns a dictionary of whatever it mined.
+    Any extra fields need to be added to extra_fields or to_csv will fail.
+
+    ``.get_pages_recursively`` gets everything downwards. Do note that .forbidden_categories_keywords may need to be set.
     This calls both .get_pages and .get_subcategories, both of which actually call .get_members which calls get, which is the web fetcher.
-    .get_pageviews gets the page views.
+    ``.get_pageviews`` gets the page views.
     """
     api = "https://en.wikipedia.org/w/api.php"
 
@@ -58,7 +63,9 @@ class WikicatParser:
 
     def get(self, params):
         """
-        Fetch data.
+        Does the actual fetching
+        Called by the methods ``get_content`` and ``get_members``
+        which are for article pages and category pages respectively
         """
         data = self.session.get(url=self.api, params=params).json()
         if 'continue' in data:
@@ -70,6 +77,9 @@ class WikicatParser:
         return data
 
     def _add_datum(self, data, cat):
+        """
+        Fills the data e
+        """
         for d in data:
             name = d["title"]
             if name not in self.data:
@@ -81,6 +91,8 @@ class WikicatParser:
                     wiki = self.get_content(name)
                     for key, value in self.page_parser(wiki).items():
                         self.data[name][key] = value
+            elif cat in self.data[name]["category"].split('|'):
+                warnings.warn('dejavu: requested visited article for already visited category')
             else:
                 self.data[name]["category"] += '|' + cat
 
@@ -96,15 +108,24 @@ class WikicatParser:
         self.category_map[cat] = [s['title'] for s in subcats]
         return subcats
 
-    def get_page_by_name(self, name, cat='Manual'):
-        # gets the page by the name specified! This is a fix!
+    def get_page_by_name(self, name, cat='Manual') -> dict:
+        """
+        Gets the page by the name specified.
+         This is for user fixes etc.
+        """
         self._add_datum([{'title': name}], cat)
+        return self.data[name]
 
-    def get_pages(self, cat):
-        # gets all the pages within the category
+    def get_pages(self, cat: str):
+        """
+        gets all the pages within the category
+        """
         return self.get_members(cat, 'page')
 
     def get_members(self, cat, cmtype='subcat|page'):
+        """
+        Get the members of a given category and fill the internal ``data`` attribute
+        """
         params = {
             'action':  "query",
             'list':    "categorymembers",
@@ -117,9 +138,9 @@ class WikicatParser:
         if 'query' not in r:
             print(f'{cat} replied with {str(r)}.')
             return []
-        data = r['query']['categorymembers']
-        self._add_datum(data, cat)
-        return data
+        member_info = r['query']['categorymembers']
+        self._add_datum(member_info, cat)
+        return member_info
 
     def get_pages_recursively(self, cat=None):
         if cat is None:
@@ -150,7 +171,10 @@ class WikicatParser:
         except pageviewapi.client.ZeroOrDataNotLoadedException:
             return float('nan')
 
-    def get_content(self, page):
+    def get_content(self, page) -> str:
+        """
+        Gets the content of a given article
+        """
         params = {
             'action':    "query",
             'prop':      'revisions',
@@ -161,20 +185,14 @@ class WikicatParser:
         }
         data = self.session.get(url=self.api, params=params).json()
         pageid = list(data['query']['pages'].keys())[0]
-        wikimarkup = data['query']['pages'][pageid]['revisions'][0]['*']
+        wikimarkup:str = data['query']['pages'][pageid]['revisions'][0]['*']
         return wikimarkup.encode('utf-8', 'ignore').decode('unicode_escape', 'ignore')  # not quite right
 
-    def to_csv(self):
-        """Don't save as csv for storage. Save as pickle. This is just for causal inspection in Excel."""
-        with open(f'{self.category_cleaned}.csv', 'w', newline='') as w:
-            dw = csv.DictWriter(w, ['title', 'category', 'ns', 'views', 'pageid'] + self.extra_fields,
-                                extrasaction='ignore')
-            dw.writeheader()
-            dw.writerows(self.data.values())
-        return self
-
     ####### code to convert template to dictionary
-    def parse_templates(self, text):
+    def parse_templates(self, text: str) -> dict:
+        """
+        Convert template to dictionary
+        """
         dex = {}
         for t in wtp.parse(text).templates:
             for want in self.wanted_templates:
@@ -207,6 +225,17 @@ class WikicatParser:
     def _template_to_dict(self, template):
         return {self._arg_to_key(arg): self._arg_to_val(arg) for arg in template.arguments}
 
+    # -------------- IO ----------------------------
+
     def to_dataframe(self):
         import pandas as pd
         return pd.DataFrame.from_dict(self.data, orient='index')
+
+    def to_csv(self):
+        """Don't save as csv for storage. Save as pickle. This is just for causal inspection in Excel."""
+        with open(f'{self.category_cleaned}.csv', 'w', newline='') as w:
+            dw = csv.DictWriter(w, ['title', 'category', 'ns', 'views', 'pageid'] + self.extra_fields,
+                                extrasaction='ignore')
+            dw.writeheader()
+            dw.writerows(self.data.values())
+        return self

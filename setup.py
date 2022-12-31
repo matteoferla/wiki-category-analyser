@@ -1,7 +1,4 @@
 from setuptools import setup, find_packages
-from warnings import warn
-from importlib import util
-import os
 
 import os
 this_directory = os.path.abspath(os.path.dirname(__file__))
@@ -21,7 +18,7 @@ else:
 
 setup(
     name='Wiki-Category-Analyser',
-    version='0.1',
+    version='1',
     description='Mining info within infoboxes in wikipedia articles for a given category',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -34,7 +31,7 @@ setup(
     author='Matteo Ferla',
     author_email='matteo.ferla@gmail.com',
     classifiers=[  # https://pypi.org/classifiers/
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 5 - Production/Stable ',
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
